@@ -8,7 +8,16 @@ HOST = ''
 PORT = 5000
 clients = {
   'aaroh': {
-    'password': 'password',
+    'password': 'subway',
+    'isOnline': False,
+    'connection': None,
+    'queue': [],
+  },
+  'patrick': {
+    'password': 'shiba',
+    'isOnline': False,
+    'connection': None,
+    'queue': [],
   }
 }
 
@@ -21,15 +30,23 @@ def client_thread(c):
     password = c.recv(1024)
 
     if username not in clients or clients[username]['password'] != password:
-      c.send('Invalid Username/Password combination.')
+      c.send('Invalid Username/Password combination.\n')
+      c.close()
+
+    clients[username]['isOnline'] = True;
+    clients[username]['connection'] = c;
 
     menu = cleandoc("""
     MENU
     ================
     [1] Logout
     [2] Change Password
+    [3] Send Message
+    [4] List Unread Messages
+    [5] Broadcast To All Online Users
     """)
     c.send(menu + "\n\n")
+    c.send('You have {} unread messages\n\n'.format(len(clients[username]['queue'])))
 
     while 1:
       data = c.recv(1024)
@@ -38,6 +55,7 @@ def client_thread(c):
           continue
 
       if data == '1':
+        clients[username]['isOnline'] = False;
         c.send('Goodbye.\n')
         c.close()
       if data == '2':
@@ -48,10 +66,36 @@ def client_thread(c):
 
         if old_password == clients[username]['password']:
           clients[username]['password'] = new_password
-          c.send('You have successfully changed your password.')
+          c.send('You have successfully changed your password.\n')
         else:
           c.send('Sorry, something went wrong.')
+      if data == '3':
+        c.send('To: ')
+        receiver = c.recv(1024)
+        c.send('Message: ')
+        message = c.recv(1024)
 
+        if clients[receiver]['isOnline']:
+          c.send('Sent Message!\n\n')
+          clients[receiver]['connection'].send('{}: {}'.format(username, message))
+          clients[receiver]['connection'].send(menu)
+        else:
+          c.send('They\'re not online right now. They will receive your message when they log back in\n\n')
+          clients[receiver]['queue'].append({'from': username, 'message': message})
+      if data == '4':
+        for message in clients[username]['queue']:
+          c.send('{}: {}'.format(message['from'], message['message']))
+
+        del clients[username]['queue'][:]
+      if data == '5':
+        c.send('Message: ')
+        message = c.recv(1024)
+        for clientname in clients:
+          if clients[clientname]['isOnline']:
+            clients[clientname]['connection'].send('{}: {}'.format(username, message))
+            clients[clientname]['connection'].send(menu)
+
+        c.send('Broadcasted Message!')
       c.send('\n\n' + menu + "\n\n")
   except:
     print('Client disconnected')
